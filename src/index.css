@@ -1,0 +1,89 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Outfit", sans-serif;
+  --color-brand: #2563eb;
+  --color-bg-chat: #f3f4f6;
+}
+
+@layer base {
+  body {
+    @apply bg-white text-slate-900 font-sans antialiased h-screen overflow-hidden;
+  }
+}
+
+.sleek-shadow {
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
+}
+
+.bubble-shadow {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+}
+
+.glass-header {
+  @apply bg-white/80 backdrop-blur-md border-b border-slate-200;
+}
+
+.whatsapp-green {
+  @apply bg-[#075E54] text-white;
+}
+
+.whatsapp-bg {
+  @apply bg-[#E5DDD5];
+}
+
+.insta-gradient {
+  background: radial-gradient(circle at 30% 107%, #fdf497 0%, #fdf497 5%, #fd5949 45%, #d6249f 60%, #285AEB 90%);
+}
+
+.futuristic-btn {
+  @apply transition-all duration-300 ease-in-out cursor-pointer active:scale-95 hover:scale-105;
+}
+
+.glow-blue {
+  @apply hover:shadow-[0_0_25px_rgba(37,99,235,0.4)] hover:border-blue-300;
+}
+
+.glow-red {
+  @apply hover:shadow-[0_0_25px_rgba(239,68,68,0.4)] hover:border-red-300;
+}
+
+.glow-rose {
+  @apply hover:shadow-[0_0_25px_rgba(244,63,94,0.4)] hover:border-rose-300;
+}
+
+.glass-btn {
+  @apply bg-white/30 backdrop-blur-xl border border-white/40 hover:bg-white/60 shadow-xl;
+}
+
+.fab-glow {
+  box-shadow: 0 10px 40px -10px rgba(37, 99, 235, 0.5), 0 0 20px rgba(37, 99, 235, 0.2);
+}
+
+.fab-glow:hover {
+  box-shadow: 0 15px 50px -10px rgba(37, 99, 235, 0.6), 0 0 30px rgba(37, 99, 235, 0.3);
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+.robot-animate {
+  @apply transition-transform duration-300;
+}
+
+.group:hover .robot-animate {
+  animation: robot-bounce 0.6s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes robot-bounce {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-5px) rotate(12deg); }
+}

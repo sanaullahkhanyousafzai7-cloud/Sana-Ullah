@@ -1,0 +1,12 @@
+{
+  "name": "Asaan AI Assistant",
+  "description": "Professional Roman Urdu AI for everyday tasks, office work, and technical help. Featuring an invisible UI design for maximum productivity.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "AI Vision",
+    "Professional Writing",
+    "Budget Planning"
+  ]
+}
