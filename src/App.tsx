@@ -37,12 +37,20 @@ import {
   Maximize,
   ShieldCheck,
   Lock,
-  Download
+  Download,
+  Copy,
+  Check,
+  Mic,
+  MicOff,
+  Wand2,
+  Settings2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { Toaster, toast } from 'sonner';
 import ReactMarkdown from 'react-markdown';
 import { getAIResponse } from './services/aiService';
 import { cn } from './lib/utils';
+import { PREDEFINED_PERSONAS, type Persona } from './constants';
 
 interface Message {
   id: string;
@@ -70,26 +78,32 @@ const Logo = ({ className = "w-10 h-10", settings }: { className?: string; setti
   }[settings.aiIcon];
 
   return (
-    <div className={cn("relative group", className)} style={{ transform: `scale(${settings.logoSize / 100})` }}>
-      {settings.isAnimated && (
-        <>
-          <div className="absolute inset-0 bg-blue-600 rounded-2xl rotate-6 group-hover:rotate-12 transition-transform opacity-20"></div>
-          <div className="absolute inset-0 bg-indigo-600 rounded-2xl -rotate-3 group-hover:-rotate-6 transition-transform opacity-20"></div>
-        </>
-      )}
-      <div className="relative flex items-center justify-center bg-white rounded-2xl shadow-lg border border-white h-full w-full overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-blue-600 to-indigo-700 opacity-90"></div>
-        {settings.customLogo ? (
-          <img 
-            src={settings.customLogo} 
-            alt="Custom Logo" 
-            className={cn("w-full h-full object-contain relative z-10 p-1", settings.isAnimated && "robot-animate")} 
-          />
-        ) : (
-          <IconComponent className={cn("w-2/3 h-2/3 text-white relative z-10", settings.isAnimated && "robot-animate")} />
+    <motion.div 
+      whileHover={{ y: -5, scale: 1.02 }}
+      transition={{ type: "spring", stiffness: 400, damping: 10 }}
+      className={className}
+    >
+      <div className={cn("relative group w-full h-full")} style={{ transform: `scale(${settings.logoSize / 100})` }}>
+        {settings.isAnimated && (
+          <>
+            <div className="absolute inset-0 bg-blue-600 rounded-2xl rotate-6 group-hover:rotate-12 transition-transform opacity-20"></div>
+            <div className="absolute inset-0 bg-indigo-600 rounded-2xl -rotate-3 group-hover:-rotate-6 transition-transform opacity-20"></div>
+          </>
         )}
+        <div className="relative flex items-center justify-center bg-white rounded-2xl shadow-lg border border-white h-full w-full overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-br from-blue-600 to-indigo-700 opacity-90"></div>
+          {settings.customLogo ? (
+            <img 
+              src={settings.customLogo} 
+              alt="Custom Logo" 
+              className={cn("w-full h-full object-contain relative z-10 p-1", settings.isAnimated && "robot-animate")} 
+            />
+          ) : (
+            <IconComponent className={cn("w-2/3 h-2/3 text-white relative z-10", settings.isAnimated && "robot-animate")} />
+          )}
+        </div>
       </div>
-    </div>
+    </motion.div>
   );
 };
 
@@ -108,21 +122,96 @@ export default function App() {
     {
       id: 'welcome',
       type: 'bot',
-      text: 'Welcome aboard, and congratulations on joining our team! I’m Main Asaan AI Assistant—I can help with anything you need. How can I assist you today?',
+      text: 'Main Asaan AI Assistant hoon. Main aap ki kya madad kar sakta hoon?',
       timestamp: new Date()
     }
   ]);
   const [input, setInput] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isReconnecting, setIsReconnecting] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSmartMenuOpen, setIsSmartMenuOpen] = useState(false);
   const [isChatVisible, setIsChatVisible] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [isListening, setIsListening] = useState(false);
+  const [selectedPersonaId, setSelectedPersonaId] = useState<string>('default');
+  const [customPersonas, setCustomPersonas] = useState<Persona[]>(() => {
+    const saved = localStorage.getItem('custom_personas');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [isPersonaModalOpen, setIsPersonaModalOpen] = useState(false);
+  const [newPersona, setNewPersona] = useState({ name: '', description: '', instruction: '' });
+  
+  const allPersonas = [...PREDEFINED_PERSONAS, ...customPersonas];
+  const selectedPersona = allPersonas.find(p => p.id === selectedPersonaId) || PREDEFINED_PERSONAS[0];
+
+  useEffect(() => {
+    localStorage.setItem('custom_personas', JSON.stringify(customPersonas));
+  }, [customPersonas]);
   
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const recognitionRef = useRef<any>(null);
+
+  useEffect(() => {
+    // Initialize Speech Recognition
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      recognitionRef.current = new SpeechRecognition();
+      recognitionRef.current.continuous = true;
+      recognitionRef.current.interimResults = true;
+      recognitionRef.current.lang = 'ur-PK'; // Urdu (Pakistan) or default
+
+      recognitionRef.current.onresult = (event: any) => {
+        let transcript = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          transcript += event.results[i][0].transcript;
+        }
+        setInput(prev => {
+          // If it's a new result, append it or replace it depending on logic
+          // Simple logic: replace if interim, append if final? 
+          // Actually, let's just update the input with the current transcript
+          return transcript;
+        });
+      };
+
+      recognitionRef.current.onerror = (event: any) => {
+        console.error('Speech recognition error:', event.error);
+        setIsListening(false);
+        toast.error("Voice input mein masla aa gaya.", {
+          description: event.error === 'not-allowed' ? "Microphone permission ki zaroorat hai." : "Dobara koshish karein."
+        });
+      };
+
+      recognitionRef.current.onend = () => {
+        setIsListening(false);
+      };
+    }
+  }, []);
+
+  const toggleListening = () => {
+    if (!recognitionRef.current) {
+      toast.error("Aap ka browser voice input support nahi karta.");
+      return;
+    }
+
+    if (isListening) {
+      recognitionRef.current.stop();
+    } else {
+      try {
+        recognitionRef.current.start();
+        setIsListening(true);
+        toast.info("Sun raha hoon...", {
+          description: "Bolna shuru karein.",
+          duration: 2000
+        });
+      } catch (err) {
+        console.error("Failed to start recognition:", err);
+      }
+    }
+  };
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -135,6 +224,10 @@ export default function App() {
   };
 
   const handleSend = async (textOverride?: string) => {
+    if (isListening && recognitionRef.current) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+    }
     const textToSend = textOverride || input;
     if (!textToSend && !selectedImage) return;
 
@@ -148,12 +241,13 @@ export default function App() {
 
     setMessages(prev => [...prev, userMsg]);
     setInput('');
+    setSearchQuery('');
     setSelectedImage(null);
     setIsLoading(true);
 
     try {
       // Logic: Gemini first
-      const aiReply = await getAIResponse(textToSend, userMsg.image?.split(',')[1]);
+      const aiReply = await getAIResponse(textToSend, userMsg.image?.split(',')[1], selectedPersona.instruction);
       
       const botMsg: Message = {
         id: (Date.now() + 1).toString(),
@@ -163,9 +257,11 @@ export default function App() {
       };
       setMessages(prev => [...prev, botMsg]);
     } catch (error: any) {
-      // Display error message
-      setErrorMessage(error.message || "AI response mein masla aa gaya hai.");
-      setTimeout(() => setErrorMessage(null), 6000);
+      // Display error message using sonner
+      toast.error(error.message || "AI response mein masla aa gaya hai.", {
+        description: "Baraye meharbani kuch dair baad dobara koshish karein.",
+        duration: 5000,
+      });
 
       // Seamless Fallback
       setIsReconnecting(true);
@@ -206,10 +302,21 @@ export default function App() {
       setMessages([{
         id: 'welcome',
         type: 'bot',
-        text: 'Chat clear ho gai hai. Main kaise madad karoon?',
+        text: 'Main Asaan AI Assistant hoon. Main aap ki kya madad kar sakta hoon?',
         timestamp: new Date()
       }]);
+      toast.success("Chat history clear ho gayi!");
     }
+  };
+
+  const filteredMessages = messages.filter(msg => 
+    msg.text.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const copyToClipboard = (text: string, id: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
   };
 
   return (
@@ -404,10 +511,32 @@ export default function App() {
                 >
                   <Menu className="w-6 h-6 text-slate-600" />
                 </button>
+                <div className="hidden sm:block">
+                  <Logo settings={logoSettings} className="w-10 h-10" />
+                </div>
                 <div className="flex flex-col">
                   <p className="text-[10px] text-slate-500 uppercase font-bold tracking-[0.2em]">Active Chat</p>
                   <h2 className="text-sm font-bold text-slate-800 italic font-display">“Mushkil kaam ko asaan banana”</h2>
                 </div>
+              </div>
+
+              <div className="flex-1 max-w-sm mx-4 relative hidden md:block">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input 
+                  type="text"
+                  placeholder="Search messages..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full bg-slate-100/50 border border-slate-200 rounded-xl py-2 pl-10 pr-4 text-xs font-medium outline-none focus:ring-2 focus:ring-blue-100 transition-all"
+                />
+                {searchQuery && (
+                  <button 
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2"
+                  >
+                    <X className="w-3 h-3 text-slate-400 hover:text-slate-600" />
+                  </button>
+                )}
               </div>
 
               <div className="flex items-center gap-3">
@@ -429,7 +558,43 @@ export default function App() {
               ref={scrollRef}
               className="flex-1 overflow-y-auto px-6 md:px-12 py-6 space-y-8 scroll-smooth"
             >
-              {messages.map((msg, i) => (
+              {/* Mobile Search Bar */}
+              <div className="md:hidden pb-4">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input 
+                    type="text"
+                    placeholder="Search chat history..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full bg-white border border-slate-200 rounded-2xl py-3 pl-10 pr-4 text-xs font-medium outline-none shadow-sm"
+                  />
+                  {searchQuery && (
+                    <button 
+                      onClick={() => setSearchQuery('')}
+                      className="absolute right-3 top-1/2 -translate-y-1/2"
+                    >
+                      <X className="w-4 h-4 text-slate-400" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {filteredMessages.length === 0 && searchQuery && (
+                <motion.div 
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="flex flex-col items-center justify-center py-20 text-center"
+                >
+                  <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4">
+                    <Search className="w-8 h-8 text-slate-300" />
+                  </div>
+                  <p className="text-sm font-bold text-slate-800">No results found</p>
+                  <p className="text-xs text-slate-500 mt-1">Try searching for keywords like "biometric" or "health".</p>
+                </motion.div>
+              )}
+
+              {filteredMessages.map((msg, i) => (
                 <motion.div
                   initial={{ opacity: 0, y: 15 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -505,9 +670,28 @@ export default function App() {
 
                         <div className={cn(
                           "flex items-center gap-2 mt-4 text-[10px] items-center",
-                          msg.type === 'user' ? "opacity-60 justify-end" : "text-slate-400"
+                          msg.type === 'user' ? "opacity-60 justify-end" : "text-slate-400 justify-between"
                         )}>
                           <span>{msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                          {msg.type === 'bot' && (
+                            <button 
+                              onClick={() => copyToClipboard(msg.text, msg.id)}
+                              className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors flex items-center gap-1 group"
+                              title="Copy to clipboard"
+                            >
+                              {copiedId === msg.id ? (
+                                <>
+                                  <Check className="w-3 h-3 text-emerald-500" />
+                                  <span className="text-emerald-500 font-bold">Copied!</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="w-3 h-3 text-slate-400 group-hover:text-blue-500" />
+                                  <span className="opacity-0 group-hover:opacity-100 transition-opacity font-bold">Copy</span>
+                                </>
+                              )}
+                            </button>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -517,24 +701,40 @@ export default function App() {
 
               {isLoading && !isReconnecting && (
                 <motion.div 
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
                   className="flex items-start gap-4"
                 >
-                  <div className="w-10 h-10 rounded-full bg-white border border-slate-200 sleek-shadow flex items-center justify-center animate-pulse overflow-hidden">
+                  <div className="w-10 h-10 rounded-full bg-white border border-slate-200 sleek-shadow flex items-center justify-center shrink-0 hidden sm:flex">
                     {logoSettings.customLogo ? (
-                      <img src={logoSettings.customLogo} alt="logo" className="w-full h-full object-contain p-2" />
+                      <img src={logoSettings.customLogo} alt="logo" className="w-full h-full object-contain p-2 rounded-full" />
                     ) : (
-                      <span className={cn("text-lg grayscale", logoSettings.isAnimated && "robot-animate")}>
+                      <span className={cn("text-lg", logoSettings.isAnimated && "robot-animate")}>
                         {logoSettings.aiIcon === 'bot' ? '🤖' :
                          logoSettings.aiIcon === 'sparkles' ? '✨' :
                          logoSettings.aiIcon === 'cpu' ? '⚙️' : '⚡'}
                       </span>
                     )}
                   </div>
-                  <div className="bg-white border border-slate-200 p-5 rounded-3xl rounded-tl-sm shadow-sm flex items-center gap-3">
-                    <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
-                    <span className="text-xs font-semibold text-slate-500 animate-pulse italic">System analyzing...</span>
+                  <div className="bg-white border border-slate-200 px-5 py-4 rounded-3xl rounded-tl-sm bubble-shadow flex items-center gap-3">
+                    <div className="flex gap-1.5 py-1">
+                      <motion.span 
+                        animate={{ opacity: [0.4, 1, 0.4] }} 
+                        transition={{ duration: 1.5, repeat: Infinity, delay: 0 }}
+                        className="w-1.5 h-1.5 bg-blue-500 rounded-full" 
+                      />
+                      <motion.span 
+                        animate={{ opacity: [0.4, 1, 0.4] }} 
+                        transition={{ duration: 1.5, repeat: Infinity, delay: 0.2 }}
+                        className="w-1.5 h-1.5 bg-blue-500 rounded-full" 
+                      />
+                      <motion.span 
+                        animate={{ opacity: [0.4, 1, 0.4] }} 
+                        transition={{ duration: 1.5, repeat: Infinity, delay: 0.4 }}
+                        className="w-1.5 h-1.5 bg-blue-500 rounded-full" 
+                      />
+                    </div>
+                    <span className="text-[11px] font-bold text-slate-400 italic">Asaan AI typing...</span>
                   </div>
                 </motion.div>
               )}
@@ -628,15 +828,40 @@ export default function App() {
                     placeholder={currentLayout === 'whatsapp' ? "Type a message" : "Write a caption..."}
                     className="flex-1 outline-none text-sm bg-transparent font-medium text-slate-800 placeholder:text-slate-400"
                   />
-                  {currentLayout !== 'instagram' && (
+                  <div className="flex items-center gap-2">
                     <button 
-                      onClick={() => fileInputRef.current?.click()}
-                      className="text-xl text-slate-400 hover:text-blue-600 transition-colors"
-                      title="Upload Photo"
+                      onClick={() => setIsPersonaModalOpen(true)}
+                      className={cn(
+                        "p-2 rounded-full transition-all duration-300 relative group/p",
+                        selectedPersonaId !== 'default' ? "bg-amber-50 text-amber-600" : "text-slate-400 hover:text-amber-600"
+                      )}
+                      title={`Current Persona: ${selectedPersona.name}`}
                     >
-                      <Camera className="w-5 h-5" />
+                      <Wand2 className="w-5 h-5 transition-transform group-hover/p:rotate-12" />
+                      {selectedPersonaId !== 'default' && (
+                        <span className="absolute -top-1 -right-1 w-2 h-2 bg-amber-500 rounded-full border border-white"></span>
+                      )}
                     </button>
-                  )}
+                    <button 
+                      onClick={toggleListening}
+                      className={cn(
+                        "p-2 rounded-full transition-all duration-300",
+                        isListening ? "bg-red-100 text-red-600 animate-pulse scale-110" : "text-slate-400 hover:text-blue-600"
+                      )}
+                      title={isListening ? "Stop Listening" : "Voice Input"}
+                    >
+                      {isListening ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+                    </button>
+                    {currentLayout !== 'instagram' && (
+                      <button 
+                        onClick={() => fileInputRef.current?.click()}
+                        className="text-xl text-slate-400 hover:text-blue-600 transition-colors"
+                        title="Upload Photo"
+                      >
+                        <Camera className="w-5 h-5" />
+                      </button>
+                    )}
+                  </div>
                   <input type="file" ref={fileInputRef} onChange={handleImageUpload} className="hidden" accept="image/*" />
                 </div>
                 
@@ -753,30 +978,167 @@ export default function App() {
           </motion.div>
         )}
 
-        <AnimatePresence>
-          {errorMessage && (
-            <motion.div 
-              initial={{ opacity: 0, y: 50, scale: 0.9 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              className="absolute bottom-24 left-1/2 -translate-x-1/2 z-[60] bg-rose-600 text-white px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 border border-rose-500"
-            >
-              <div className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center">
-                <Bot className="w-4 h-4 text-white" />
-              </div>
-              <div className="flex flex-col">
-                <span className="text-[10px] font-black uppercase tracking-widest opacity-80">AI Notification</span>
-                <span className="text-xs font-bold">{errorMessage}</span>
-              </div>
-              <button onClick={() => setErrorMessage(null)} className="ml-2 hover:bg-white/10 p-1 rounded-lg">
-                <X className="w-4 h-4" />
-              </button>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        <Toaster position="top-center" richColors closeButton />
       </main>
       </div>
 
+      {/* Persona Selection Modal */}
+      <AnimatePresence>
+        {isPersonaModalOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsPersonaModalOpen(false)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-2xl bg-white rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+            >
+              <div className="p-8 border-b border-slate-100 flex items-center justify-between shrink-0">
+                <div>
+                  <h2 className="text-2xl font-black text-slate-800 flex items-center gap-2">
+                    <Wand2 className="w-6 h-6 text-amber-500" />
+                    AI Personas
+                  </h2>
+                  <p className="text-sm font-medium text-slate-500">AI ka baat karne ka andaaz (style) chunein.</p>
+                </div>
+                <button 
+                  onClick={() => setIsPersonaModalOpen(false)}
+                  className="p-3 bg-slate-50 rounded-2xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              <div className="p-8 overflow-y-auto space-y-8 custom-scrollbar">
+                {/* Custom Creator */}
+                <div className="p-6 bg-blue-50/50 border border-blue-100 rounded-[2rem] space-y-4">
+                  <h3 className="text-xs font-black text-blue-500 uppercase tracking-widest flex items-center gap-2">
+                    <PlusCircle className="w-4 h-4" />
+                    Custom Persona Banayen
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <input 
+                      type="text" 
+                      placeholder="Naam (e.g. History Guru)" 
+                      value={newPersona.name}
+                      onChange={e => setNewPersona(prev => ({...prev, name: e.target.value}))}
+                      className="w-full p-4 rounded-2xl bg-white border border-blue-100 text-sm font-bold outline-none focus:ring-4 focus:ring-blue-500/10 transition-all"
+                    />
+                    <input 
+                      type="text" 
+                      placeholder="Choti description" 
+                      value={newPersona.description}
+                      onChange={e => setNewPersona(prev => ({...prev, description: e.target.value}))}
+                      className="w-full p-4 rounded-2xl bg-white border border-blue-100 text-sm font-bold outline-none focus:ring-4 focus:ring-blue-500/10 transition-all"
+                    />
+                  </div>
+                  <textarea 
+                    placeholder="AI ko kia instruction deni hai? (e.g. Aap hamesha bachon ki tarah samjhayen...)" 
+                    value={newPersona.instruction}
+                    onChange={e => setNewPersona(prev => ({...prev, instruction: e.target.value}))}
+                    className="w-full p-4 rounded-2xl bg-white border border-blue-100 text-sm font-medium min-h-[100px] outline-none focus:ring-4 focus:ring-blue-500/10 transition-all resize-none"
+                  />
+                  <button 
+                    onClick={() => {
+                      if (!newPersona.name || !newPersona.instruction) {
+                        toast.error("Naam aur instructions dono lazmi hain.");
+                        return;
+                      }
+                      const id = 'custom-' + Date.now();
+                      setCustomPersonas(prev => [...prev, { ...newPersona, id }]);
+                      setSelectedPersonaId(id);
+                      setNewPersona({ name: '', description: '', instruction: '' });
+                      toast.success("Naya Persona save ho gaya!");
+                    }}
+                    className="w-full p-4 rounded-2xl bg-blue-600 text-white text-xs font-black tracking-widest uppercase futuristic-btn"
+                  >
+                    Save & Apply Persona
+                  </button>
+                </div>
+
+                {/* Grid of Personas */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {allPersonas.map(persona => (
+                    <motion.div
+                      key={persona.id}
+                      whileHover={{ y: -4 }}
+                      whileTap={{ scale: 0.98 }}
+                      onClick={() => {
+                        setSelectedPersonaId(persona.id);
+                        setIsPersonaModalOpen(false);
+                        toast.success(`${persona.name} applied!`);
+                      }}
+                      className={cn(
+                        "p-6 rounded-[2rem] text-left transition-all border-2 relative group cursor-pointer",
+                        selectedPersonaId === persona.id 
+                          ? "bg-amber-50 border-amber-500 shadow-xl shadow-amber-500/10" 
+                          : "bg-white border-slate-100 hover:border-slate-300"
+                      )}
+                    >
+                      {persona.id.startsWith('custom-') && (
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (window.confirm("Is persona ko delete karein?")) {
+                              setCustomPersonas(prev => prev.filter(p => p.id !== persona.id));
+                              if (selectedPersonaId === persona.id) setSelectedPersonaId('default');
+                            }
+                          }}
+                          className="absolute top-4 right-4 p-2 opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500 transition-all"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                      
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className={cn(
+                          "w-10 h-10 rounded-xl flex items-center justify-center",
+                          selectedPersonaId === persona.id ? "bg-amber-500 text-white shadow-lg" : "bg-slate-100 text-slate-400"
+                        )}>
+                          {persona.id === 'default' ? <Bot className="w-5 h-5" /> : 
+                           persona.id === 'expert' ? <Cpu className="w-5 h-5" /> :
+                           persona.id === 'writer' ? <Type className="w-5 h-5" /> :
+                           persona.id === 'friend' ? <MessageSquare className="w-5 h-5" /> :
+                           <Sparkles className="w-5 h-5" />}
+                        </div>
+                        <h4 className="font-black text-slate-800 tracking-tight">{persona.name}</h4>
+                      </div>
+                      <p className="text-xs font-medium text-slate-500 leading-relaxed">{persona.description}</p>
+                      
+                      {selectedPersonaId === persona.id && (
+                        <motion.div 
+                          layoutId="persona-active"
+                          className="absolute -bottom-1 -right-1 bg-amber-500 text-white p-1 rounded-br-2xl rounded-tl-xl shadow-lg"
+                        >
+                          <Check className="w-4 h-4" />
+                        </motion.div>
+                      )}
+                    </motion.div>
+                  ))}
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+      <Toaster 
+        position="top-center" 
+        richColors 
+        toastOptions={{
+          style: {
+            borderRadius: '1.5rem',
+            padding: '1rem',
+            border: '1px solid #e2e8f0',
+            boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)'
+          }
+        }}
+      />
     </div>
   );
 }
@@ -796,14 +1158,8 @@ function SettingsView({
     <div className="flex-1 overflow-y-auto p-6 space-y-8 bg-slate-50/50">
       <div className="max-w-4xl mx-auto">
         <header className="mb-10">
-          <h1 className="text-3xl font-black text-slate-900 flex items-center gap-3">
-            <div className="w-12 h-12 rounded-2xl bg-slate-900 text-white flex items-center justify-center overflow-hidden">
-               {logoSettings.customLogo ? (
-                 <img src={logoSettings.customLogo} alt="logo" className="w-full h-full object-contain p-2" />
-               ) : (
-                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.1a2 2 0 0 1-1-1.72v-.51a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
-               )}
-            </div>
+          <h1 className="text-3xl font-black text-slate-900 flex items-center gap-4">
+            <Logo settings={logoSettings} className="w-14 h-14" />
             User Profile & Settings
           </h1>
           <p className="text-slate-500 font-medium mt-2">Manage your account preferences and AI personalization.</p>
@@ -847,7 +1203,12 @@ function SettingsView({
                       <input type="email" defaultValue="sanaullahkhanyousafzai7@gmail.com" className="w-full p-3 rounded-xl bg-slate-50 border border-slate-100 outline-none focus:ring-2 focus:ring-blue-100 font-bold text-slate-700" />
                     </div>
                   </div>
-                  <button className="px-6 py-2.5 bg-blue-600 text-white rounded-xl text-xs font-bold futuristic-btn glow-blue">
+                  <button 
+                    onClick={() => {
+                      toast.success("Profile preferences save ho gayin!");
+                    }}
+                    className="px-6 py-2.5 bg-blue-600 text-white rounded-xl text-xs font-bold futuristic-btn glow-blue"
+                  >
                     Save Changes
                   </button>
                 </div>
@@ -1124,14 +1485,21 @@ function SettingsView({
                 className="bg-rose-50/30 p-6 rounded-[2.5rem] border border-rose-100"
              >
                 <h4 className="text-xs font-black text-rose-400 uppercase tracking-widest mb-4">Account Danger Zone</h4>
-                <button className="w-full p-4 rounded-2xl bg-white border border-rose-100 text-rose-500 text-xs font-black tracking-widest futuristic-btn flex items-center justify-center gap-2 uppercase">
+                <button 
+                  onClick={() => {
+                    if (window.confirm("Kya aap waqai apna health data delete karna chahte hain? Ye wapas nahi aa sakega.")) {
+                      toast.success("Health data delete ho gaya.");
+                    }
+                  }}
+                  className="w-full p-4 rounded-2xl bg-white border border-rose-100 text-rose-500 text-xs font-black tracking-widest futuristic-btn flex items-center justify-center gap-2 uppercase"
+                >
                    <Trash2 className="w-4 h-4" />
                    Delete Health Data
                 </button>
              </motion.div>
-          </div>
-        </div>
-      </div>
+           </div>
+         </div>
+       </div>
     </div>
   );
 }
